@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-kubelet-cadvisor
+  namespace: infra
+  labels:
+    release: prometheus  # Adjust this label to match your Prometheus Operator's selector
+spec:
+  jobLabel: k8s-app
+  selector:
+    matchLabels:
+      k8s-app: kubelet  # This label should match your kubelets' label
+  namespaceSelector:
+    matchNames:
+      - kube-system  # Assuming kubelet metrics are exposed in this namespace
+  endpoints:
+    - port: https  # Adjust the port if your setup is different
+      path: /metrics/cadvisor
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
