@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-helx-metrics
+  namespace: infra
+  labels:
+    release: prometheus
+spec:
+  jobLabel: helx-metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helx-metrics
+  namespaceSelector:
+    matchNames:
+      - jeffw
+  endpoints:
+  - path: "/metrics"
+    port: http
+    scheme: http
+    interval: 30s
