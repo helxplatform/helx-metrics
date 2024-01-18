@@ -27,14 +27,18 @@ type HelxAppInfo struct {
 
 // Define the Prometheus metric
 var reg = prometheus.NewRegistry()
-var helxAppGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "helx_app_info", Help: "Information about Helx pods"}, []string{"podname", "username"})
+var helxAppGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "helx_app_info", Help: "Information about a Helx app"}, []string{"podname", "username"})
+var helxUserGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "helx_user_info", Help: "Information about Helx user"}, []string{"username"})
 var helxApps map[string]HelxAppInfo
+var helxUsers map[string]int
 var mutex sync.Mutex
 
 func init() {
 	// Register the metric with Prometheus
 	reg.MustRegister(helxAppGauge)
+	reg.MustRegister(helxUserGauge)
 	helxApps = make(map[string]HelxAppInfo)
+	helxUsers = make(map[string]int)
 }
 
 func SetUpInformer(clientset *kubernetes.Clientset, namespace string, addFunc func(*v1.Pod), deleteFunc func(*v1.Pod)) {
@@ -69,8 +73,16 @@ func HandleAddPod(pod *v1.Pod) {
 			}
 
 			mutex.Lock()
-			helxApps[pod.GetName()] = appInfo
 			helxAppGauge.WithLabelValues(pod.GetName(), username).Set(1)
+			helxApps[pod.GetName()] = appInfo
+			if numApps, ok := helxUsers[username]; ok {
+				numApps += 1
+				helxUsers[username] = numApps
+				helxUserGauge.WithLabelValues(username).Set(float64(numApps))
+			} else {
+				helxUsers[username] = 1
+				helxUserGauge.WithLabelValues(username).Set(1)
+			}
 			mutex.Unlock()
 
 			log.Printf("Added Helx app: %s with username: %s\n", pod.GetName(), username)
@@ -86,6 +98,20 @@ func HandleDeletePod(pod *v1.Pod) {
 		helxAppGauge.DeleteLabelValues(pod.GetName(), helxApp.UserName) // Delete gauge for this pod
 		delete(helxApps, pod.GetName())
 		log.Printf("Removed pod: %s\n", pod.GetName())
+	}
+	if value, ok := pod.Labels["executor"]; ok && value == "tycho" {
+		if username, ok := pod.Labels["username"]; ok {
+			if numApps, ok := helxUsers[username]; ok {
+				numApps -= 1
+				if numApps == 0 {
+					delete(helxUsers, username)
+					helxUserGauge.DeleteLabelValues(username)
+				} else {
+					helxUsers[username] = numApps
+					helxUserGauge.WithLabelValues(username).Set(float64(numApps))
+				}
+			}
+		}
 	}
 	mutex.Unlock()
 }
